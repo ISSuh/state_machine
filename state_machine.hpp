@@ -1,20 +1,20 @@
 /**
- * 
+ *
  *  Copyright:  Copyright (c) 2021, ISSuh
- * 
+ *
  */
 
 #ifndef STATE_MACHINE_HPP_
 #define STATE_MACHINE_HPP_
 
-#include <iostream>
-#include <string>
-#include <map>
+#include <atomic>
 #include <functional>
 #include <future>
-#include <atomic>
-#include <utility>
+#include <iostream>
+#include <map>
 #include <memory>
+#include <string>
+#include <utility>
 
 namespace sm {
 
@@ -22,72 +22,57 @@ class ArgumentBase {
  public:
   virtual ~ArgumentBase() {}
 
-  template<typename T>
-  T get();
-
-  template<typename T>
-  void set(T value);
+  template <typename T>
+  T* get();
 };
 
-template<typename T>
+template <typename T>
 class Argument : public ArgumentBase {
  public:
-  Argument() {}
+  explicit Argument(T* value) : value_(value) {}
   virtual ~Argument() {}
 
-  T get() {
-    return value_;
-  }
-
-  void set(T value) {
-    value_ = value;
-  }
+  T* get() { return value_.get(); }
 
  private:
-  T value_;
+  std::unique_ptr<T> value_;
 };
 
-template<typename T>
-T ArgumentBase::get() {
+template <typename T>
+T* ArgumentBase::get() {
   return dynamic_cast<Argument<T>&>(*this).get();
-}
-
-template<typename T>
-void ArgumentBase::set(T value) {
-  return dynamic_cast<Argument<T>&>(*this).set(value);
 }
 
 class Arguments {
  public:
-  Arguments() = default;
-  ~Arguments() = default;
-
-  template<typename T>
-  void allocate(const std::string& key, T value) {
+  template <typename T>
+  void allocate(const std::string& key, T* value) {
     if (args_.find(key) != args_.end()) {
+#if defined(STATE_MACHINE_DEBUG)
+      std::cout << "[" << key << "] already exist\n";
+#endif
       return;
     }
 
-    Argument<T> *arg = new Argument<T>();
-    arg->set(value);
-
-    args_.insert({key, arg});
+    args_.insert({key, static_cast<ArgumentBase*>(new Argument<T>(value))});
   }
 
-  template<typename T>
-  T at(const std::string& key) {
+  template <typename T>
+  T* at(const std::string& key) {
     return args_[key]->get<T>();
   }
+
+  int32_t number_of_args() const { return args_.size(); }
+  bool find(const std::string& key) { return args_.find(key) != args_.end(); }
 
  private:
   std::map<std::string, ArgumentBase*> args_;
 };
 
-template<typename S>
+template <typename S>
 class State {
  public:
   explicit State(S state) : state_(state) {}
-  ~State() = default;
 
   void change(S state) { state_ = state; }
   const S now() const { return state_; }
@@ -99,16 +84,18 @@ class State {
   S state_;
 };
 
-template<typename S>
+template <typename S>
 class StateMachine {
  public:
   explicit StateMachine(Arguments args)
-    : args_(args), state_(State<S>(S::START)), running_(false) {}
+      : args_(args), state_(State<S>(S::START)), running_(false) {}
 
-  template<typename F>
+  template <typename F>
   void on(S state, F&& func) {
     if (worker_.find(state) != worker_.end()) {
-      std::cout << "Already exist\n";
+#if defined(STATE_MACHINE_DEBUG)
+      std::cout << "state already exist\n";
+#endif
       return;
     }
 
@@ -116,14 +103,15 @@ class StateMachine {
     worker_.insert({state, task});
   }
 
-  template<typename F, typename T>
+  template <typename F, typename T>
   void on(S state, F&& func, T&& class_obj) {
     if (worker_.find(state) != worker_.end()) {
       std::cout << "Already exist\n";
       return;
     }
 
-    auto task = std::bind(std::forward<F>(func), std::forward<T>(class_obj), std::ref(args_));
+    auto task = std::bind(std::forward<F>(func), std::forward<T>(class_obj),
+                          std::ref(args_));
     worker_.insert({state, task});
   }
 
