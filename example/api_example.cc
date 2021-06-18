@@ -24,20 +24,21 @@ enum class Color {
 class MyArgyment {
  public:
   void hello() { std::cout << "hello " << val++ << std::endl; }
+
  private:
   int val = 0;
 };
 
 Color red_color(sm::Arguments& arg) {
-  int32_t* count = arg.at<int32_t>("count");
-  double* array = arg.at<double>("array");
-  std::vector<int32_t>* vec = arg.at<std::vector<int32_t>>("vec");
-  MyArgyment* my_arg = arg.at<MyArgyment>("obj");
+  int32_t* count = arg.At<int32_t>("count");
+  double* array = arg.At<double>("array");
+  std::vector<int32_t>* vec = arg.At<std::vector<int32_t>>("vec");
+  MyArgyment* my_arg = arg.At<MyArgyment>("obj");
 
   std::cout << "----- Color RED State -----\n";
   std::cout << "count : " << *count++ << std::endl;
   std::cout << "array : ";
-  for (int32_t i  = 0 ; i < 10 ; ++i) {
+  for (int32_t i = 0; i < 10; ++i) {
     std::cout << array[i]++ << " ";
   }
   std::cout << std::endl;
@@ -56,15 +57,15 @@ Color red_color(sm::Arguments& arg) {
 class MyState {
  public:
   Color blue_color(sm::Arguments& arg) {
-    int32_t* count = arg.at<int32_t>("count");
-    double* array = arg.at<double>("array");
-    std::vector<int32_t>* vec = arg.at<std::vector<int32_t>>("vec");
-    MyArgyment* my_arg = arg.at<MyArgyment>("obj");
+    int32_t* count = arg.At<int32_t>("count");
+    double* array = arg.At<double>("array");
+    std::vector<int32_t>* vec = arg.At<std::vector<int32_t>>("vec");
+    MyArgyment* my_arg = arg.At<MyArgyment>("obj");
 
     std::cout << "----- Color BLUE State -----\n";
     std::cout << "count : " << *count++ << std::endl;
     std::cout << "array : ";
-    for (int32_t i  = 0 ; i < 10 ; ++i) {
+    for (int32_t i = 0; i < 10; ++i) {
       std::cout << array[i]++ << " ";
     }
     std::cout << std::endl;
@@ -88,36 +89,38 @@ int main() {
   sm::Arguments args;
 
   int32_t count = 0;
-  args.allocate("count", &count);
+  args.Allocate("count", &count);
 
-  double array[10] = {0.0, };
-  args.allocate("array", array);
+  double array[10] = {
+      0.0,
+  };
+  args.Allocate("array", array);
 
   std::vector<int32_t> vec = {1, 2, 3, 4, 5};
-  args.allocate("vec", &vec);
+  args.Allocate("vec", &vec);
 
   MyArgyment my_arg;
-  args.allocate("obj", &my_arg);
+  args.Allocate("obj", &my_arg);
 
   // create state machine and regist arguments
   sm::StateMachine<Color> machine(args);
 
   // function mapping with user define State
-  machine.on(Color::RED, &red_color);
+  machine.On(Color::RED, &red_color);
 
   MyState my_state;
-  machine.on(Color::BLUE, &MyState::blue_color, &my_state);
+  machine.On(Color::BLUE, &MyState::blue_color, &my_state);
 
-  machine.on(Color::GREEN, [](sm::Arguments& arg) {
-    int32_t* count = arg.at<int32_t>("count");
-    double* array = arg.at<double>("array");
-    std::vector<int32_t>* vec = arg.at<std::vector<int32_t>>("vec");
-    MyArgyment* my_arg = arg.at<MyArgyment>("obj");
+  machine.On(Color::GREEN, [](sm::Arguments& arg) {
+    int32_t* count = arg.At<int32_t>("count");
+    double* array = arg.At<double>("array");
+    std::vector<int32_t>* vec = arg.At<std::vector<int32_t>>("vec");
+    MyArgyment* my_arg = arg.At<MyArgyment>("obj");
 
     std::cout << "----- Color GREEN State -----\n";
     std::cout << "count : " << *count++ << std::endl;
     std::cout << "array : ";
-    for (int32_t i  = 0 ; i < 10 ; ++i) {
+    for (int32_t i = 0; i < 10; ++i) {
       std::cout << array[i]++ << " ";
     }
     std::cout << std::endl;
@@ -133,5 +136,5 @@ int main() {
     return Color::DONE;
   });
 
-  machine.run();
+  machine.Run();
 }

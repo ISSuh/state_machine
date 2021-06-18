@@ -2,11 +2,14 @@ CC = g++
 CXXFLAGS = -Wall -g -std=c++11
 DEFINE = -DSTATE_MACHINE_DEBUG_BUILD
 
-all: clean example
+all: clean api_example async_server
 
-example : example.cc
+api_example : api_example.cc
+	$(CC) $(CXXFLAGS) $^ -o $@ $(DEFINE)
+
+async_server : async_server.cc
 	$(CC) $(CXXFLAGS) $^ -o $@ $(DEFINE)
 
 .PHONY: clean
 clean:
-	rm -f $(OBJS) example
+	rm -f api_example async_server

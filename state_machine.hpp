@@ -9,7 +9,6 @@
 
 #include <atomic>
 #include <functional>
-#include <future>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -23,7 +22,7 @@ class ArgumentBase {
   virtual ~ArgumentBase() {}
 
   template <typename T>
-  T* get();
+  T* get() const {}
 };
 
 template <typename T>
@@ -32,21 +31,16 @@ class Argument : public ArgumentBase {
   explicit Argument(T* value) : value_(value) {}
   virtual ~Argument() {}
 
-  T* get() { return value_.get(); }
+  T* get() const { return value_.get(); }
 
  private:
   std::unique_ptr<T> value_;
 };
 
-template <typename T>
-T* ArgumentBase::get() {
-  return dynamic_cast<Argument<T>&>(*this).get();
-}
-
 class Arguments {
  public:
   template <typename T>
-  void allocate(const std::string& key, T* value) {
+  void Allocate(const std::string& key, T* value) {
     if (args_.find(key) != args_.end()) {
 #if defined(STATE_MACHINE_DEBUG)
       std::cout << "[" << key << "] already exist\n";
@@ -58,12 +52,20 @@ class Arguments {
   }
 
   template <typename T>
-  T* at(const std::string& key) {
-    return args_[key]->get<T>();
+  T* At(const std::string& key) {
+    if (args_.find(key) == args_.end()) {
+#if defined(STATE_MACHINE_DEBUG)
+      std::cout << "[" << key << "] invalid\n";
+#endif
+      return nullptr;
+    }
+
+    Argument<T>* arg = dynamic_cast<Argument<T>*>(args_[key]);
+    return arg->get();
   }
 
-  int32_t number_of_args() const { return args_.size(); }
-  bool find(const std::string& key) { return args_.find(key) != args_.end(); }
+  int32_t NumberOfArgs() const { return args_.size(); }
+  bool Find(const std::string& key) { return args_.find(key) != args_.end(); }
 
  private:
   std::map<std::string, ArgumentBase*> args_;
@@ -74,25 +76,25 @@ class State {
  public:
   explicit State(S state) : state_(state) {}
 
-  void change(S state) { state_ = state; }
-  const S now() const { return state_; }
+  void Change(S state) { state_.store(state); }
+  const S Now() const { return state_.load(); }
 
-  int32_t to_int() const { return static_cast<int32_t>(state_); }
-  int32_t number_of_state() const { return static_cast<int32_t>(S::DONE); }
+  bool IsStartState() const { return state_.load() == S::START; }
+  bool IsDoneState() const { return state_.load() == S::DONE; }
 
  private:
-  S state_;
+  std::atomic<S> state_;
 };
 
 template <typename S>
 class StateMachine {
  public:
   explicit StateMachine(Arguments args)
-      : args_(args), state_(State<S>(S::START)), running_(false) {}
+      : args_(args), state_(S::START), running_(false) {}
 
   template <typename F>
-  void on(S state, F&& func) {
-    if (worker_.find(state) != worker_.end()) {
+  void On(S state, F&& func) {
+    if (HasTask(state)) {
 #if defined(STATE_MACHINE_DEBUG)
       std::cout << "state already exist\n";
 #endif
@@ -104,9 +106,11 @@ class StateMachine {
   }
 
   template <typename F, typename T>
-  void on(S state, F&& func, T&& class_obj) {
-    if (worker_.find(state) != worker_.end()) {
-      std::cout << "Already exist\n";
+  void On(S state, F&& func, T&& class_obj) {
+    if (HasTask(state)) {
+#if defined(STATE_MACHINE_DEBUG)
+      std::cout << "state already exist\n";
+#endif
       return;
     }
 
@@ -115,21 +119,30 @@ class StateMachine {
     worker_.insert({state, task});
   }
 
-  void run() {
-    running_.store(true);
-    while (running_.load()) {
-      if (state_.now() == S::DONE) {
-        running_.store(false);
+  void Run() {
+    ChangeRunning(true);
+
+    while (IsRunning()) {
+      if (!HasTask(state_.Now())) {
+        break;
       }
 
-      if (worker_.find(state_.now()) == worker_.end()) {
-        running_.store(false);
+      if (state_.IsDoneState()) {
+        ChangeRunning(false);
       }
 
-      S next_state = worker_[state_.now()]();
-      state_.change(next_state);
+      S next_state = worker_[state_.Now()]();
+      state_.Change(next_state);
     }
   }
+
+  bool HasTask(S state) const { return worker_.find(state) != worker_.end(); }
+  bool IsRunning() const { return running_.load(); }
+
+  S NowState() const { return state_.Now(); }
+
+ private:
+  void ChangeRunning(bool run) { running_.store(run); }
 
  private:
   Arguments args_;
