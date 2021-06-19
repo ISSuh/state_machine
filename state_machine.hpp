@@ -52,7 +52,7 @@ class Arguments {
   }
 
   template <typename T>
-  T* At(const std::string& key) {
+  T* At(const std::string& key) const {
     if (args_.find(key) == args_.end()) {
 #if defined(STATE_MACHINE_DEBUG)
       std::cout << "[" << key << "] invalid\n";
@@ -60,7 +60,8 @@ class Arguments {
       return nullptr;
     }
 
-    Argument<T>* arg = dynamic_cast<Argument<T>*>(args_[key]);
+    ArgumentBase* arg_base = args_.at(key);
+    Argument<T>* arg = dynamic_cast<Argument<T>*>(arg_base);
     return arg->get();
   }
 
@@ -87,10 +88,28 @@ class State {
 };
 
 template <typename S>
+class Task {
+ public:
+  using TaskFunction = std::function<S()>;
+  Task() = default;
+  ~Task() = default;
+
+  template <typename F>
+  explicit Task(F&& func) : task_(func) {}
+
+  const int32_t Call() const { return static_cast<int32_t>(task_()); }
+
+ private:
+  TaskFunction task_;
+};
+
+template <typename S>
 class StateMachine {
  public:
   explicit StateMachine(Arguments args)
-      : args_(args), state_(S::START), running_(false) {}
+      : args_(args),
+        state_(S::START),
+        running_(false) {}
 
   template <typename F>
   void On(S state, F&& func) {
@@ -101,8 +120,8 @@ class StateMachine {
       return;
     }
 
-    auto task = std::bind(std::forward<F>(func), std::ref(args_));
-    worker_.insert({state, task});
+    auto task_func = std::bind(std::forward<F>(func), std::ref(args_));
+    worker_.emplace(state, task_func);
   }
 
   template <typename F, typename T>
@@ -114,9 +133,24 @@ class StateMachine {
       return;
     }
 
-    auto task = std::bind(std::forward<F>(func), std::forward<T>(class_obj),
-                          std::ref(args_));
-    worker_.insert({state, task});
+    auto task_func = std::bind(std::forward<F>(func),
+                               std::forward<T>(class_obj), std::ref(args_));
+    worker_.emplace(state, task_func);
+  }
+
+  template<typename T>
+  void RegistSubState(S state, StateMachine<T>* sub_state_machine, S output_state) {
+    if (HasTask(state)) {
+#if defined(STATE_MACHINE_DEBUG)
+      std::cout << "state already exist\n";
+#endif
+      return;
+    }
+
+    // TODO: should add deleter for memory 
+    SubStateMachine<T>* sub_machine = new SubStateMachine<T>(sub_state_machine, output_state);
+    auto task_func = std::bind(&SubStateMachine<T>::Run, sub_machine);
+    worker_.emplace(state, task_func);
   }
 
   void Run() {
@@ -131,7 +165,8 @@ class StateMachine {
         ChangeRunning(false);
       }
 
-      S next_state = worker_[state_.Now()]();
+      const Task<S>& task = worker_[state_.Now()];
+      S next_state = static_cast<S>(task.Call());
       state_.Change(next_state);
     }
   }
@@ -144,10 +179,26 @@ class StateMachine {
  private:
   void ChangeRunning(bool run) { running_.store(run); }
 
+  template <typename SubState>
+  class SubStateMachine {
+   public:
+    SubStateMachine(StateMachine<SubState>* state_machine, S output_state)
+      : state_machine_(state_machine), output_state_(output_state) {}
+
+    S Run() {
+      state_machine_->Run();
+      return output_state_;
+    }
+
+   private:
+    StateMachine<SubState>* state_machine_;
+    S output_state_;
+  };
+
  private:
   Arguments args_;
   State<S> state_;
-  std::map<S, std::function<S()>> worker_;
+  std::map<S, Task<S>> worker_;
 
   std::atomic_bool running_ = false;
 };
