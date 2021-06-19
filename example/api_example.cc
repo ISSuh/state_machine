@@ -78,10 +78,6 @@ class MyState {
     PrintArguments(arg);
     return SubColor::DONE;
   }
-
-  Color convert() {
-    return Color::GREEN;
-  }
 };
 
 int main() {
