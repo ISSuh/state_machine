@@ -9,13 +9,94 @@
 
 #include <atomic>
 #include <functional>
+#include <future>
+#include <initializer_list>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <queue>
 #include <string>
+#include <thread>
 #include <utility>
+#include <vector>
 
 namespace sm {
+
+class ThreadPool {
+ public:
+  ThreadPool() : ThreadPool(0) {}
+  explicit ThreadPool(size_t thread_num)
+      : thread_num_(thread_num),
+        threads_(std::vector<std::thread>(thread_num_)),
+        running_(false) {
+    for (size_t i = 0; i < thread_num_; ++i) {
+      threads_.emplace_back([&]() { runTask(); });
+    }
+  }
+
+  virtual ~ThreadPool() {
+    running_ = true;
+    cv_.notify_all();
+
+    for (auto& thread : threads_) {
+      if (thread.joinable()) {
+        thread.join();
+      }
+    }
+  }
+
+  template <class F, class... Args>
+  std::future<typename std::result_of<F(Args...)>::type> pushTask(
+      F&& func,
+      Args&&... args) {
+    if (running_) {
+      throw std::runtime_error("Terminate ThreadPool");
+    }
+
+    using returnType = typename std::result_of<F(Args...)>::type;
+
+    auto task = std::make_shared<std::packaged_task<returnType()>>(
+        std::bind(std::forward<F>(func), std::forward<Args>(args)...));
+    std::future<returnType> taskReturn = task->get_future();
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      task_queue_.push([task]() { (*task)(); });
+    }
+
+    cv_.notify_one();
+
+    return taskReturn;
+  }
+
+ private:
+  void runTask() {
+    while (true) {
+      std::unique_lock<std::mutex> lock(mutex_);
+      cv_.wait(lock, [&]() { return !task_queue_.empty() || running_; });
+
+      if (running_ && task_queue_.empty()) {
+        return;
+      }
+
+      std::function<void()> task = std::move(task_queue_.front());
+      task_queue_.pop();
+
+      lock.unlock();
+
+      task();
+    }
+  }
+
+ private:
+  size_t thread_num_;
+  std::vector<std::thread> threads_;
+  std::queue<std::function<void()>> task_queue_;
+  std::condition_variable cv_;
+  std::mutex mutex_;
+
+  bool running_;
+};
 
 class ArgumentBase {
  public:
@@ -82,29 +163,46 @@ ArgumentType* Arguments::At(const std::string& key) const {
 template <typename UserState>
 class State {
  public:
-  explicit State(UserState state) : state_(state) {}
+  State(std::initializer_list<UserState> state) : states_(*state.begin()) {}
+  explicit State(UserState state) : states_(state) {}
 
-  void Change(UserState state) { state_.store(state); }
-  const UserState Now() const { return state_.load(); }
+  State(State&& rhs) : states_(rhs.states_.load()) {}
+  State(const State& rhs) : states_(rhs.states_.load()) {}
 
-  bool IsStartState() const { return state_.load() == UserState::START; }
-  bool IsDoneState() const { return state_.load() == UserState::DONE; }
+  void Change(UserState state) { states_.store(state); }
+  const UserState Now() const { return states_.load(); }
+
+  bool IsStartState() const { return states_.load() == UserState::START; }
+  bool IsDoneState() const { return states_.load() == UserState::DONE; }
+
+  const State& operator=(const State& rhs) {
+    if (this == &rhs) {
+      return *this;
+    }
+
+    states_.store(rhs.states_.load());
+    return *this;
+  }
 
  private:
-  std::atomic<UserState> state_;
+  std::atomic<UserState> states_;
 };
+
+template <typename UserState>
+using States = std::vector<sm::State<UserState>>;
 
 template <typename UserState>
 class Task {
  public:
-  using TaskFunction = std::function<UserState()>;
+  using TaskFunction = std::function<States<UserState>()>;
   Task() = default;
   ~Task() = default;
 
   template <typename F>
   explicit Task(F&& func) : task_(func) {}
 
-  const int32_t Call() const { return static_cast<int32_t>(task_()); }
+  const States<UserState> call() const { return task_(); }
+  const TaskFunction& get() const { return task_; }
 
  private:
   TaskFunction task_;
@@ -113,11 +211,10 @@ class Task {
 template <typename UserState>
 class StateMachine {
  public:
-  StateMachine()
-      : state_(UserState::START), running_(false) {}
+  StateMachine() : states_({{UserState::START}}), running_(false) {}
 
   explicit StateMachine(Arguments args)
-      : args_(args), state_(UserState::START), running_(false) {}
+      : args_(args), states_({{UserState::START}}), running_(false) {}
 
   template <typename F>
   void On(UserState state, F&& func);
@@ -137,10 +234,13 @@ class StateMachine {
   }
 
   bool IsRunning() const { return running_.load(); }
-  const UserState NowState() const { return state_.Now(); }
+
+  const States<UserState>& NowStates() const { return states_; }
+  const State<UserState>& NowState() const { return states_[0]; }
 
  private:
   void ChangeRunning(bool run) { running_.store(run); }
+  bool NeedConcurreny() const { return states_.size() > 1; }
 
   template <typename SubState>
   class SubStateMachine {
@@ -149,9 +249,9 @@ class StateMachine {
                     UserState output_state)
         : state_machine_(state_machine), output_state_(output_state) {}
 
-    UserState Run() {
+    States<UserState> Run() {
       state_machine_->Run();
-      return output_state_;
+      return {{output_state_}};
     }
 
    private:
@@ -161,7 +261,7 @@ class StateMachine {
 
  private:
   Arguments args_;
-  State<UserState> state_;
+  States<UserState> states_;
   std::map<UserState, Task<UserState>> worker_;
 
   std::atomic_bool running_ = false;
@@ -220,26 +320,33 @@ void StateMachine<UserState>::Run() {
   ChangeRunning(true);
 
   while (IsRunning()) {
-    if (!HasTask(state_.Now())) {
-      break;
-    }
+    if (NeedConcurreny()) {
+      const States<UserState>& states = NowStates();
 
-    if (state_.IsDoneState()) {
-      ChangeRunning(false);
-    }
+      ThreadPool thread_pool(states.size());
+      States<UserState> next_state;
+      for (const auto& state : states) {
+        const Task<UserState>& task = worker_[state.Now()];
+        auto ss = thread_pool.pushTask(task.get()).get();
+        next_state.emplace_back({ss});
+      }
 
-    {
-      const Task<UserState>& task = worker_[state_.Now()];
-      UserState next_state = static_cast<UserState>(task.Call());
-      state_.Change(next_state);
+      states_ = next_state;
+    } else {
+      const State<UserState>& state = NowState();
+      if (!HasTask(state.Now())) {
+        break;
+      }
+
+      if (state.IsDoneState()) {
+        ChangeRunning(false);
+      }
+
+      const Task<UserState>& task = worker_[state.Now()];
+      const States<UserState>& next_state = task.call();
+      states_ = next_state;
     }
   }
-}
-
-template <typename UserState>
-class NextState {
- public:
- private:
 }
 
 }  // namespace sm
