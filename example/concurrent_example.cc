@@ -19,6 +19,8 @@ enum class MyState : uint32_t {
 enum class MyWork : uint32_t {
   WORK_1,
   WORK_2,
+  WORK_3,
+  WORK_MERGE,
   WORK_DONE,
 
   START,
@@ -27,42 +29,61 @@ enum class MyWork : uint32_t {
 
 class MyWorker {
  public:
-  sm::States<MyWork> Start(sm::Arguments& arg) {
+  sm::States<MyWork> Start(const sm::Arguments& arg) {
     return {{MyWork::WORK_1}, {MyWork::WORK_2}};
   }
 
-  sm::States<MyWork> Work1(sm::Arguments& arg) {
+  sm::States<MyWork> Work1(const sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_1----\n";
     for (auto i = 0 ; i < 20 ; ++i) {
       std::cout << " WORK_1 = " << i << std::endl;
     }
 
-    return {{MyWork::WORK_DONE}};
+    return {{MyWork::WORK_3}};
   }
 
-  sm::States<MyWork> Work2(sm::Arguments& arg) {
+  sm::States<MyWork> Work2(const sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_2----\n";
     for (auto i = 0 ; i < 20 ; ++i) {
       std::cout << " WORK_2 = " << i << std::endl;
     }
 
+    return {{MyWork::WORK_MERGE}};
+  }
+
+  sm::States<MyWork> Work3(const sm::Arguments& arg) {
+    std::cout << "----MyWork::WORK_3----\n";
+    for (auto i = 0 ; i < 20 ; ++i) {
+      std::cout << " WORK_3 = " << i << std::endl;
+    }
+
+    return {{MyWork::WORK_MERGE}};
+  }
+
+  sm::States<MyWork> WorkMerge(const sm::Arguments& arg) {
+    std::cout << "----MyWork::WORK_MERGE----\n";
     return {{MyWork::WORK_DONE}};
   }
 
-  sm::States<MyWork> WorkDone(sm::Arguments& arg) {
+  sm::States<MyWork> WorkDone(const sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_DONE----\n";
     return {{MyWork::DONE}};
   }
 };
 
-sm::States<MyState> connect_func(sm::Arguments& arg) {
+sm::States<MyState> connect_func(const sm::Arguments& arg) {
   std::cout << "----MyState::CONNECT----\n";
   return {{MyState::WORK}};
 }
 
-sm::States<MyState> close_func(sm::Arguments& arg) {
+sm::States<MyState> close_func(const sm::Arguments& arg) {
   std::cout << "----MyState::CLOSE----\n";
   return {{MyState::DONE}};
+}
+
+sm::States<MyState> test_func() {
+  std::cout << "----MyState::CONNECT----\n";
+  return {{MyState::WORK}};
 }
 
 int main() {
@@ -76,11 +97,13 @@ int main() {
   concurncy_machine.On(MyWork::START, &MyWorker::Start, &worker);
   concurncy_machine.On(MyWork::WORK_1, &MyWorker::Work1, &worker);
   concurncy_machine.On(MyWork::WORK_2, &MyWorker::Work2, &worker);
+  concurncy_machine.On(MyWork::WORK_3, &MyWorker::Work3, &worker);
+  concurncy_machine.On(MyWork::WORK_MERGE, &MyWorker::WorkMerge, &worker);
   concurncy_machine.On(MyWork::WORK_DONE, &MyWorker::WorkDone, &worker);
 
   machine.RegistSubState(MyState::WORK, &concurncy_machine, MyState::CLOSE);
 
   machine.On(MyState::CLOSE, &close_func);
 
-  machine.Run();
+  machine.Excute();
 }

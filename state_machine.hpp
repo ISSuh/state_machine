@@ -7,6 +7,7 @@
 #ifndef STATE_MACHINE_HPP_
 #define STATE_MACHINE_HPP_
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <future>
@@ -30,7 +31,7 @@ class ThreadPool {
         threads_(std::vector<std::thread>(thread_num_)),
         running_(false) {
     for (size_t i = 0; i < thread_num_; ++i) {
-      threads_.emplace_back([&]() { runTask(); });
+      threads_.emplace_back([&]() { RunTask(); });
     }
   }
 
@@ -46,7 +47,7 @@ class ThreadPool {
   }
 
   template <class F, class... Args>
-  std::future<typename std::result_of<F(Args...)>::type> pushTask(
+  std::future<typename std::result_of<F(Args...)>::type> PushTask(
       F&& func,
       Args&&... args) {
     if (running_) {
@@ -70,7 +71,7 @@ class ThreadPool {
   }
 
  private:
-  void runTask() {
+  void RunTask() {
     while (true) {
       std::unique_lock<std::mutex> lock(mutex_);
       cv_.wait(lock, [&]() { return !task_queue_.empty() || running_; });
@@ -195,8 +196,6 @@ template <typename UserState>
 class Task {
  public:
   using TaskFunction = std::function<States<UserState>()>;
-  Task() = default;
-  ~Task() = default;
 
   template <typename F>
   explicit Task(F&& func) : task_(func) {}
@@ -205,6 +204,9 @@ class Task {
   const TaskFunction& get() const { return task_; }
 
  private:
+  Task(const Task<UserState>& rhs) = delete;
+  Task<UserState>& operator=(const Task<UserState>& rhs) = delete;
+
   TaskFunction task_;
 };
 
@@ -227,7 +229,7 @@ class StateMachine {
                       StateMachine<SubState>* sub_state_machine,
                       UserState output_state);
 
-  void Run();
+  void Excute();
 
   bool HasTask(UserState state) const {
     return worker_.find(state) != worker_.end();
@@ -242,6 +244,9 @@ class StateMachine {
   void ChangeRunning(bool run) { running_.store(run); }
   bool NeedConcurreny() const { return states_.size() > 1; }
 
+  void SequenceStateRun(States<UserState>* next_state);
+  void ConcurrentStateRun(States<UserState>* next_state);
+
   template <typename SubState>
   class SubStateMachine {
    public:
@@ -249,8 +254,8 @@ class StateMachine {
                     UserState output_state)
         : state_machine_(state_machine), output_state_(output_state) {}
 
-    States<UserState> Run() {
-      state_machine_->Run();
+    States<UserState> Excute() {
+      state_machine_->Excute();
       return {{output_state_}};
     }
 
@@ -310,41 +315,68 @@ void StateMachine<UserState>::RegistSubState(
   }
 
   auto task_func = std::bind(
-      &SubStateMachine<SubState>::Run,
+      &SubStateMachine<SubState>::Excute,
       std::move(SubStateMachine<SubState>(sub_state_machine, output_state)));
   worker_.emplace(state, task_func);
 }
 
 template <typename UserState>
-void StateMachine<UserState>::Run() {
+void StateMachine<UserState>::Excute() {
   ChangeRunning(true);
 
   while (IsRunning()) {
+    States<UserState> next_state;
+
     if (NeedConcurreny()) {
-      const States<UserState>& states = NowStates();
-
-      ThreadPool thread_pool(states.size());
-      States<UserState> next_state;
-      for (const auto& state : states) {
-        const Task<UserState>& task = worker_[state.Now()];
-        auto ss = thread_pool.pushTask(task.get()).get();
-        next_state.emplace_back({ss});
-      }
-
-      states_ = next_state;
+      ConcurrentStateRun(&next_state);
     } else {
-      const State<UserState>& state = NowState();
-      if (!HasTask(state.Now())) {
-        break;
-      }
+      SequenceStateRun(&next_state);
+    }
 
-      if (state.IsDoneState()) {
-        ChangeRunning(false);
-      }
+    states_ = next_state;
+  }
+}
 
-      const Task<UserState>& task = worker_[state.Now()];
-      const States<UserState>& next_state = task.call();
-      states_ = next_state;
+template <typename UserState>
+void StateMachine<UserState>::SequenceStateRun(States<UserState>* next_state) {
+  const State<UserState>& state = NowState();
+  if (!HasTask(state.Now())) {
+    ChangeRunning(false);
+    return;
+  }
+
+  if (state.IsDoneState()) {
+    ChangeRunning(false);
+  }
+
+  const Task<UserState>& task = worker_.at(state.Now());
+  *next_state = task.call();
+}
+
+template <typename UserState>
+void StateMachine<UserState>::ConcurrentStateRun(
+    States<UserState>* next_state) {
+  const States<UserState>& states = NowStates();
+
+  ThreadPool thread_pool(states.size());
+
+  std::vector<std::future<States<UserState>>> concurrent_tasks;
+  for (const auto& state : states) {
+    const Task<UserState>& task = worker_.at(state.Now());
+    concurrent_tasks.push_back(thread_pool.PushTask(task.get()));
+  }
+
+  for (std::future<States<UserState>>& task : concurrent_tasks) {
+    States<UserState> result = task.get();
+    for (const State<UserState>& state : result) {
+      auto iter = std::find_if(next_state->begin(), next_state->end(),
+                               [&](const State<UserState>& element) {
+                                 return element.Now() == state.Now();
+                               });
+
+      if (iter == next_state->end()) {
+        next_state->emplace_back(state.Now());
+      }
     }
   }
 }
