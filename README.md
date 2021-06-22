@@ -163,6 +163,7 @@ int main() {
 ### Regist sub state machine on parent
 Can regist sub state machine on other state machine.
 
+[sequence_example.cc](./example/sequence_example)
 ```cpp
 #include "state_machine.hpp"
 
@@ -235,6 +236,85 @@ int main() {
 }
 ```
 
+### Cuncurrency state
+When returned number of next state is more than one, the state machine create thread and run state function.
+
+[concurrent_example.cc](./example/concurrent_example)
+```cpp
+enum class MyState : uint32_t {
+  START,
+
+  CONNECT = START,
+  WORK,
+  CLOSE,
+
+  DONE
+};
+
+enum class MyWork : uint32_t {
+  START,
+
+  WORK_1,
+  WORK_2,
+  WORK_3,
+
+  DONE,
+};
+
+class MyWorker {
+ public:
+  sm::States<MyWork> Start(const sm::Arguments& arg) {
+    // return multiple next states
+    return {{MyWork::WORK_1}, {MyWork::WORK_2}, {MyWork::WORK_3}};
+  }
+
+  sm::States<MyWork> Work1(const sm::Arguments& arg) {
+    std::cout << "----MyWork::WORK_1----\n";
+    return {{MyWork::WORK_2}, {MyWork::WORK_3}};
+  }
+
+  sm::States<MyWork> Work2(const sm::Arguments& arg) {
+    std::cout << "----MyWork::WORK_2----\n";
+    return {{MyWork::DONE}};
+  }
+
+  sm::States<MyWork> Work3(const sm::Arguments& arg) {
+    std::cout << "----MyWork::WORK_3----\n";
+    return {{MyWork::WORK_2}, {MyWork::WORK_2}};
+  }
+};
+
+sm::States<MyState> connect_func(const sm::Arguments& arg) {
+  std::cout << "----MyState::CONNECT----\n";
+  return {{MyState::WORK}};
+}
+
+sm::States<MyState> close_func(const sm::Arguments& arg) {
+  std::cout << "----MyState::CLOSE----\n";
+  return {{MyState::DONE}};
+}
+
+int main() {
+  std::cout << "Simple State Machine example\n\n";
+
+  sm::StateMachine<MyState> machine;
+  machine.On(MyState::CONNECT, &connect_func);
+
+  MyWorker worker;
+  sm::StateMachine<MyWork> concurncy_machine;
+  concurncy_machine.On(MyWork::START, &MyWorker::Start, &worker);
+  concurncy_machine.On(MyWork::WORK_1, &MyWorker::Work1, &worker);
+  concurncy_machine.On(MyWork::WORK_2, &MyWorker::Work2, &worker);
+  concurncy_machine.On(MyWork::WORK_3, &MyWorker::Work3, &worker);
+
+  machine.RegistSubState(MyState::WORK, &concurncy_machine, MyState::CLOSE);
+
+  machine.On(MyState::CLOSE, &close_func);
+
+  machine.Excute();
+}
+```
 ## TODO
+ - Support Window
  - Visualize state machine using graphviz
  - Redesign cunrrency state

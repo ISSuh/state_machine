@@ -23,7 +23,6 @@ enum class MyWork : uint32_t {
   WORK_1,
   WORK_2,
   WORK_3,
-  WORK_DONE,
 
   DONE,
 };
@@ -36,34 +35,29 @@ class MyWorker {
 
   sm::States<MyWork> Work1(const sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_1----\n";
-    for (auto i = 0 ; i < 20 ; ++i) {
+    for (auto i = 0 ; i < 5 ; ++i) {
       std::cout << " WORK_1 = " << i << std::endl;
     }
 
-    return {{MyWork::WORK_3}, {MyWork::WORK_3}};
+    return {{MyWork::WORK_2}, {MyWork::WORK_3}};
   }
 
   sm::States<MyWork> Work2(const sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_2----\n";
-    for (auto i = 0 ; i < 20 ; ++i) {
+    for (auto i = 0 ; i < 5 ; ++i) {
       std::cout << " WORK_2 = " << i << std::endl;
     }
 
-    return {{MyWork::WORK_DONE}};
+    return {{MyWork::DONE}};
   }
 
   sm::States<MyWork> Work3(const sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_3----\n";
-    for (auto i = 0 ; i < 20 ; ++i) {
+    for (auto i = 0 ; i < 5 ; ++i) {
       std::cout << " WORK_3 = " << i << std::endl;
     }
 
-    return {{MyWork::WORK_DONE}};
-  }
-
-  sm::States<MyWork> WorkDone(const sm::Arguments& arg) {
-    std::cout << "----MyWork::WORK_DONE----\n";
-    return {{MyWork::DONE}};
+    return {{MyWork::WORK_2}, {MyWork::WORK_2}};
   }
 };
 
@@ -89,7 +83,6 @@ int main() {
   concurncy_machine.On(MyWork::WORK_1, &MyWorker::Work1, &worker);
   concurncy_machine.On(MyWork::WORK_2, &MyWorker::Work2, &worker);
   concurncy_machine.On(MyWork::WORK_3, &MyWorker::Work3, &worker);
-  concurncy_machine.On(MyWork::WORK_DONE, &MyWorker::WorkDone, &worker);
 
   machine.RegistSubState(MyState::WORK, &concurncy_machine, MyState::CLOSE);
 
