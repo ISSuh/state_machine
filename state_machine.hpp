@@ -24,82 +24,6 @@
 
 namespace sm {
 
-class ThreadPool {
- public:
-  ThreadPool() : ThreadPool(0) {}
-  explicit ThreadPool(size_t thread_num)
-      : thread_num_(thread_num),
-        threads_(std::vector<std::thread>(thread_num_)),
-        running_(false) {
-    for (size_t i = 0; i < thread_num_; ++i) {
-      threads_.emplace_back([&]() { RunTask(); });
-    }
-  }
-
-  virtual ~ThreadPool() {
-    running_ = true;
-    cv_.notify_all();
-
-    for (auto& thread : threads_) {
-      if (thread.joinable()) {
-        thread.join();
-      }
-    }
-  }
-
-  template <class F, class... Args>
-  std::future<typename std::result_of<F(Args...)>::type> PushTask(
-      F&& func,
-      Args&&... args) {
-    if (running_) {
-      throw std::runtime_error("Terminate ThreadPool");
-    }
-
-    using returnType = typename std::result_of<F(Args...)>::type;
-
-    auto task = std::make_shared<std::packaged_task<returnType()>>(
-        std::bind(std::forward<F>(func), std::forward<Args>(args)...));
-    std::future<returnType> taskReturn = task->get_future();
-
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      task_queue_.push([task]() { (*task)(); });
-    }
-
-    cv_.notify_one();
-
-    return taskReturn;
-  }
-
- private:
-  void RunTask() {
-    while (true) {
-      std::unique_lock<std::mutex> lock(mutex_);
-      cv_.wait(lock, [&]() { return !task_queue_.empty() || running_; });
-
-      if (running_ && task_queue_.empty()) {
-        return;
-      }
-
-      std::function<void()> task = std::move(task_queue_.front());
-      task_queue_.pop();
-
-      lock.unlock();
-
-      task();
-    }
-  }
-
- private:
-  size_t thread_num_;
-  std::vector<std::thread> threads_;
-  std::queue<std::function<void()>> task_queue_;
-  std::condition_variable cv_;
-  std::mutex mutex_;
-
-  bool running_;
-};
-
 class ArgumentBase {
  public:
   virtual ~ArgumentBase() {}
@@ -352,6 +276,8 @@ void StateMachine<UserState>::Excute() {
 
     if (!next_state.empty()) {
       states_.swap(next_state);
+    } else {
+      ChangeRunning(false);
     }
   }
 }
@@ -377,22 +303,21 @@ void StateMachine<UserState>::ConcurrentStateRun(
     States<UserState>* next_state) {
   const States<UserState>& states = NowStates();
 
-  ThreadPool thread_pool(states.size());
-
-  count_concurrency_states_.fetch_add(states.size());
-
   std::vector<std::future<States<UserState>>> concurrent_tasks;
-  for (const auto& state : states) {
+  for (const State<UserState>& state : states) {
+    if (!HasTask(state.Now()) || state.IsDoneState()) {
+      continue;
+    }
+
     const Task<UserState>& task = worker_.at(state.Now());
-    concurrent_tasks.push_back(thread_pool.PushTask(task.get()));
+    concurrent_tasks.emplace_back(std::async(std::launch::async, task.get()));
+    count_concurrency_states_.fetch_add(1);
   }
 
   for (std::future<States<UserState>>& task : concurrent_tasks) {
     States<UserState> result = task.get();
     for (const State<UserState>& state : result) {
-      if (state.Now() != UserState::DONE) {
-        next_state->emplace_back(state.Now());
-      }
+      next_state->emplace_back(state.Now());
     }
 
     count_concurrency_states_.fetch_sub(1);

@@ -31,7 +31,7 @@ enum class MyWork : uint32_t {
 class MyWorker {
  public:
   sm::States<MyWork> Start(const sm::Arguments& arg) {
-    return {{MyWork::WORK_1}, {MyWork::WORK_2}};
+    return {{MyWork::WORK_1}, {MyWork::WORK_2}, {MyWork::WORK_3}};
   }
 
   sm::States<MyWork> Work1(const sm::Arguments& arg) {

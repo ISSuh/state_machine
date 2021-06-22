@@ -7,6 +7,7 @@ Implement header only simple state machine using c++ 11.
 ## Feature
 - Sequential state
 - Sub state
+- Concurrent state
 
 ## Build
 This project include *\<thread\>*.\
@@ -235,5 +236,5 @@ int main() {
 ```
 
 ## TODO
- - Concurrent state
  - Visualize state machine using graphviz
+ - Redesign cunrrency state
