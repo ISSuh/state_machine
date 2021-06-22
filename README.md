@@ -35,16 +35,16 @@ You can declare state using *enum class*.
 ```cpp
 // user define state
 enum class Color {
+  // 'START' element is first state on state machine.
+  // it is must defined at first element on user state.
+  START,
+
   RED,
   BLUE,
   GREEN
 
-  // 'START' element is first state on state machine
-  // it is must defined on user state
-  START,
-
   // 'DONE' element is last state on state machine
-  // it is must defined on user state
+  // it is must defined at last element on user state.
   DONE
 };
 ```
@@ -63,11 +63,12 @@ Basically, the state machine is runed on __single thread__.
 
 // user define state
 enum class Color {
-  RED,
+  START,
+
+  RED = START,
   BLUE,
   GREEN
 
-  START = RED,
   DONE = GREEN
 };
 
@@ -80,7 +81,7 @@ sm::States<Color> red_color(const sm::Arguments& arg) {
 
 class MyBlueState {
  public:
-  sm::States<SubColor> blue_color(const sm::Arguments& arg) {
+  sm::States<Color> blue_color(const sm::Arguments& arg) {
     std::cout << "----- Color::BLUE State -----\n";
     return {{SubColor::GREEN}};
   }
@@ -165,19 +166,21 @@ Can regist sub state machine on other state machine.
 #include "state_machine.hpp"
 
 enum class Color {
-  RED,
+  START,
+
+  RED = START,
   BLUE,
   GREEN
 
-  START = RED,
   DONE = GREEN
 };
 
 enum class SubColor {
-  WHITE,
+  START,
+
+  WHITE = START,
   BLACK,
 
-  START = WHITE,
   DONE = BLACK,
 };
 

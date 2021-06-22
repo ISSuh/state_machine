@@ -16,6 +16,7 @@
 #include <map>
 #include <memory>
 #include <queue>
+#include <stack>
 #include <string>
 #include <thread>
 #include <utility>
@@ -213,10 +214,16 @@ class Task {
 template <typename UserState>
 class StateMachine {
  public:
-  StateMachine() : states_({{UserState::START}}), running_(false) {}
+  StateMachine()
+      : states_({{UserState::START}}),
+        running_(false),
+        count_concurrency_states_(0) {}
 
   explicit StateMachine(Arguments args)
-      : args_(args), states_({{UserState::START}}), running_(false) {}
+      : args_(args),
+        states_({{UserState::START}}),
+        running_(false),
+        count_concurrency_states_(0) {}
 
   template <typename F>
   void On(UserState state, F&& func);
@@ -229,6 +236,8 @@ class StateMachine {
                       StateMachine<SubState>* sub_state_machine,
                       UserState output_state);
 
+  void WaitConcurrencyOn(UserState state);
+
   void Excute();
 
   bool HasTask(UserState state) const {
@@ -240,9 +249,15 @@ class StateMachine {
   const States<UserState>& NowStates() const { return states_; }
   const State<UserState>& NowState() const { return states_[0]; }
 
+  template <typename F>
+  void RegistStateToStringFunc(F&& func);
+
  private:
   void ChangeRunning(bool run) { running_.store(run); }
   bool NeedConcurreny() const { return states_.size() > 1; }
+  bool NeedWaitingConcurrentState() const {
+    return count_concurrency_states_.load() > 1;
+  }
 
   void SequenceStateRun(States<UserState>* next_state);
   void ConcurrentStateRun(States<UserState>* next_state);
@@ -270,6 +285,9 @@ class StateMachine {
   std::map<UserState, Task<UserState>> worker_;
 
   std::atomic_bool running_ = false;
+  std::atomic_uint64_t count_concurrency_states_;
+
+  std::function<std::string(UserState)> state_to_strint_func_;
 };
 
 template <typename UserState>
@@ -326,27 +344,28 @@ void StateMachine<UserState>::Excute() {
 
   while (IsRunning()) {
     States<UserState> next_state;
-
     if (NeedConcurreny()) {
       ConcurrentStateRun(&next_state);
     } else {
       SequenceStateRun(&next_state);
     }
 
-    states_ = next_state;
+    if (!next_state.empty()) {
+      states_.swap(next_state);
+    }
   }
 }
 
 template <typename UserState>
 void StateMachine<UserState>::SequenceStateRun(States<UserState>* next_state) {
   const State<UserState>& state = NowState();
-  if (!HasTask(state.Now())) {
+  if (!HasTask(state.Now()) || state.IsDoneState()) {
     ChangeRunning(false);
     return;
   }
 
-  if (state.IsDoneState()) {
-    ChangeRunning(false);
+  if (NeedWaitingConcurrentState()) {
+    return;
   }
 
   const Task<UserState>& task = worker_.at(state.Now());
@@ -360,6 +379,8 @@ void StateMachine<UserState>::ConcurrentStateRun(
 
   ThreadPool thread_pool(states.size());
 
+  count_concurrency_states_.fetch_add(states.size());
+
   std::vector<std::future<States<UserState>>> concurrent_tasks;
   for (const auto& state : states) {
     const Task<UserState>& task = worker_.at(state.Now());
@@ -369,16 +390,19 @@ void StateMachine<UserState>::ConcurrentStateRun(
   for (std::future<States<UserState>>& task : concurrent_tasks) {
     States<UserState> result = task.get();
     for (const State<UserState>& state : result) {
-      auto iter = std::find_if(next_state->begin(), next_state->end(),
-                               [&](const State<UserState>& element) {
-                                 return element.Now() == state.Now();
-                               });
-
-      if (iter == next_state->end()) {
+      if (state.Now() != UserState::DONE) {
         next_state->emplace_back(state.Now());
       }
     }
+
+    count_concurrency_states_.fetch_sub(1);
   }
+}
+
+template <typename UserState>
+template <typename F>
+void StateMachine<UserState>::RegistStateToStringFunc(F&& func) {
+  state_to_strint_func_ = std::forward<F>(func);
 }
 
 }  // namespace sm

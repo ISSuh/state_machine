@@ -8,26 +8,51 @@
 #include "../state_machine.hpp"
 
 enum class Color {
-  RED,
+  // 'START' is first state on state machine
+  // it is must defined on user state
+  START,
+
+  RED = START,
   BLUE,
   GREEN,
 
-  // 'START' is first state on state machine
-  // it is must defined on user state
-  START = RED,
-
   // 'LAST' is first state on state machine
   // it is must defined on user state
-  DONE = GREEN
+  DONE
 };
+
+std::string ColorStateToString(Color state) {
+  switch (state) {
+  case Color::RED:
+    return "Color::RED";
+  case Color::BLUE:
+    return "Color::BLUE";
+  case Color::GREEN:
+    return "Color::GREEN";
+  default:
+    return "";
+  }
+}
 
 enum class SubColor {
-  WHITE,
+  START,
+
+  WHITE = START,
   BLACK,
 
-  START = WHITE,
-  DONE = BLACK,
+  DONE
 };
+
+std::string SubColorStateToString(SubColor state) {
+  switch (state) {
+  case SubColor::WHITE:
+    return "Color::RED";
+  case SubColor::BLACK:
+    return "Color::BLUE";
+  default:
+    return "";
+  }
+}
 
 class MyArgyment {
  public:
@@ -72,12 +97,14 @@ int main() {
 
   // create state machine and regist arguments
   sm::StateMachine<Color> machine(args);
+  machine.RegistStateToStringFunc(&ColorStateToString);
 
   // function mapping with user define State
   machine.On(Color::RED, &red_color);
 
   MySubState my_state;
   sm::StateMachine<SubColor> sub_machine(args);
+  sub_machine.RegistStateToStringFunc(&SubColorStateToString);
 
   sub_machine.On(SubColor::WHITE, &MySubState::white_color, &my_state);
   sub_machine.On(SubColor::BLACK, &MySubState::black_color, &my_state);

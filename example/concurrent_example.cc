@@ -8,23 +8,24 @@
 #include "../state_machine.hpp"
 
 enum class MyState : uint32_t {
-  CONNECT,
+  START,
+
+  CONNECT = START,
   WORK,
   CLOSE,
 
-  START = CONNECT,
-  DONE = CLOSE
+  DONE
 };
 
 enum class MyWork : uint32_t {
+  START,
+
   WORK_1,
   WORK_2,
   WORK_3,
-  WORK_MERGE,
   WORK_DONE,
 
-  START,
-  DONE = WORK_DONE,
+  DONE,
 };
 
 class MyWorker {
@@ -39,7 +40,7 @@ class MyWorker {
       std::cout << " WORK_1 = " << i << std::endl;
     }
 
-    return {{MyWork::WORK_3}};
+    return {{MyWork::WORK_3}, {MyWork::WORK_3}};
   }
 
   sm::States<MyWork> Work2(const sm::Arguments& arg) {
@@ -48,7 +49,7 @@ class MyWorker {
       std::cout << " WORK_2 = " << i << std::endl;
     }
 
-    return {{MyWork::WORK_MERGE}};
+    return {{MyWork::WORK_DONE}};
   }
 
   sm::States<MyWork> Work3(const sm::Arguments& arg) {
@@ -57,11 +58,6 @@ class MyWorker {
       std::cout << " WORK_3 = " << i << std::endl;
     }
 
-    return {{MyWork::WORK_MERGE}};
-  }
-
-  sm::States<MyWork> WorkMerge(const sm::Arguments& arg) {
-    std::cout << "----MyWork::WORK_MERGE----\n";
     return {{MyWork::WORK_DONE}};
   }
 
@@ -81,11 +77,6 @@ sm::States<MyState> close_func(const sm::Arguments& arg) {
   return {{MyState::DONE}};
 }
 
-sm::States<MyState> test_func() {
-  std::cout << "----MyState::CONNECT----\n";
-  return {{MyState::WORK}};
-}
-
 int main() {
   std::cout << "Simple State Machine example\n\n";
 
@@ -98,7 +89,6 @@ int main() {
   concurncy_machine.On(MyWork::WORK_1, &MyWorker::Work1, &worker);
   concurncy_machine.On(MyWork::WORK_2, &MyWorker::Work2, &worker);
   concurncy_machine.On(MyWork::WORK_3, &MyWorker::Work3, &worker);
-  concurncy_machine.On(MyWork::WORK_MERGE, &MyWorker::WorkMerge, &worker);
   concurncy_machine.On(MyWork::WORK_DONE, &MyWorker::WorkDone, &worker);
 
   machine.RegistSubState(MyState::WORK, &concurncy_machine, MyState::CLOSE);
