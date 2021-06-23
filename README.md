@@ -55,7 +55,7 @@ enum class Color {
 So you can use state machine using *__sm::StateMachine\<UserDefineState\>__*.
 
 The *sm::StateMachine* can regist normal funcion, member function, lamdba function.\
-Basic funcion prototype is *__sm::States\<UserDefineState\>(const sm::Arguments&)__*
+Basic funcion prototype is *__sm::States\<UserDefineState\>(sm::Arguments&)__*
 
 Basically, the state machine is runed on __single thread__.
 
@@ -73,7 +73,7 @@ enum class Color {
   DONE = GREEN
 };
 
-sm::States<Color> red_color(const sm::Arguments& arg) {
+sm::States<Color> red_color(sm::Arguments& arg) {
   std::cout << "----- Color::RED State -----\n";
 
   // return next state
@@ -82,7 +82,7 @@ sm::States<Color> red_color(const sm::Arguments& arg) {
 
 class MyBlueState {
  public:
-  sm::States<Color> blue_color(const sm::Arguments& arg) {
+  sm::States<Color> blue_color(sm::Arguments& arg) {
     std::cout << "----- Color::BLUE State -----\n";
     return {{SubColor::GREEN}};
   }
@@ -122,7 +122,7 @@ class MyArgyment {
   int val = 0;
 };
 
-sm::States<MyState> Work(const sm::Arguments& arg) {
+sm::States<MyState> Work(sm::Arguments& arg) {
   // get varialble pointer using key string
   int* count = arg.At<int>("count");
   double* array = arg.At<double>("array");
@@ -154,7 +154,7 @@ int main() {
   args.Allocate("obj", &my_arg);
 
   // regist arguments on state machine
-  sm::StateMachine<MyState> machine(args);
+  sm::StateMachine<MyState> machine(&args);
 
   ...
 }
@@ -186,22 +186,22 @@ enum class SubColor {
   DONE = BLACK,
 };
 
-sm::States<Color> red_color(const sm::Arguments& arg) {
+sm::States<Color> red_color(sm::Arguments& arg) {
   std::cout << "----- Color::RED State -----\n";
   return {{Color::BLUE}};
 }
 
-sm::States<Color> green_color(const sm::Arguments& arg) {
+sm::States<Color> green_color(sm::Arguments& arg) {
   std::cout << "----- Color::GREEN State -----\n";
   return {{Color::DONE}};
 }
 
-sm::States<SubColor> white_color(const sm::Arguments& arg) {
+sm::States<SubColor> white_color(sm::Arguments& arg) {
   std::cout << "----- SubColor::WHITE State -----\n";
   return {{SubColor::BLACK}};
 }
 
-sm::States<SubColor> black_color(const sm::Arguments& arg) {
+sm::States<SubColor> black_color(sm::Arguments& arg) {
   std::cout << "----- SubColor::BLACK State -----\n";
   return {{SubColor::DONE}};
 }
@@ -263,33 +263,33 @@ enum class MyWork : uint32_t {
 
 class MyWorker {
  public:
-  sm::States<MyWork> Start(const sm::Arguments& arg) {
+  sm::States<MyWork> Start(sm::Arguments& arg) {
     // return multiple next states
     return {{MyWork::WORK_1}, {MyWork::WORK_2}, {MyWork::WORK_3}};
   }
 
-  sm::States<MyWork> Work1(const sm::Arguments& arg) {
+  sm::States<MyWork> Work1(sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_1----\n";
     return {{MyWork::WORK_2}, {MyWork::WORK_3}};
   }
 
-  sm::States<MyWork> Work2(const sm::Arguments& arg) {
+  sm::States<MyWork> Work2(sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_2----\n";
     return {{MyWork::DONE}};
   }
 
-  sm::States<MyWork> Work3(const sm::Arguments& arg) {
+  sm::States<MyWork> Work3(sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_3----\n";
     return {{MyWork::WORK_2}, {MyWork::WORK_2}};
   }
 };
 
-sm::States<MyState> connect_func(const sm::Arguments& arg) {
+sm::States<MyState> connect_func(sm::Arguments& arg) {
   std::cout << "----MyState::CONNECT----\n";
   return {{MyState::WORK}};
 }
 
-sm::States<MyState> close_func(const sm::Arguments& arg) {
+sm::States<MyState> close_func(sm::Arguments& arg) {
   std::cout << "----MyState::CLOSE----\n";
   return {{MyState::DONE}};
 }

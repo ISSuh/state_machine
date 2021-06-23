@@ -28,11 +28,11 @@ enum class MyWork : uint32_t {
 
 class MyWorker {
  public:
-  sm::States<MyWork> Start(const sm::Arguments& arg) {
+  sm::States<MyWork> Start(sm::Arguments& arg) {
     return {{MyWork::WORK_1}, {MyWork::WORK_2}, {MyWork::WORK_3}};
   }
 
-  sm::States<MyWork> Work1(const sm::Arguments& arg) {
+  sm::States<MyWork> Work1(sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_1----\n";
     for (auto i = 0 ; i < 5 ; ++i) {
       std::cout << " WORK_1 = " << i << std::endl;
@@ -41,7 +41,7 @@ class MyWorker {
     return {{MyWork::WORK_2}, {MyWork::WORK_3}};
   }
 
-  sm::States<MyWork> Work2(const sm::Arguments& arg) {
+  sm::States<MyWork> Work2(sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_2----\n";
     for (auto i = 0 ; i < 5 ; ++i) {
       std::cout << " WORK_2 = " << i << std::endl;
@@ -50,7 +50,7 @@ class MyWorker {
     return {{MyWork::DONE}};
   }
 
-  sm::States<MyWork> Work3(const sm::Arguments& arg) {
+  sm::States<MyWork> Work3(sm::Arguments& arg) {
     std::cout << "----MyWork::WORK_3----\n";
     for (auto i = 0 ; i < 5 ; ++i) {
       std::cout << " WORK_3 = " << i << std::endl;
@@ -60,12 +60,12 @@ class MyWorker {
   }
 };
 
-sm::States<MyState> connect_func(const sm::Arguments& arg) {
+sm::States<MyState> connect_func(sm::Arguments& arg) {
   std::cout << "----MyState::CONNECT----\n";
   return {{MyState::WORK}};
 }
 
-sm::States<MyState> close_func(const sm::Arguments& arg) {
+sm::States<MyState> close_func(sm::Arguments& arg) {
   std::cout << "----MyState::CLOSE----\n";
   return {{MyState::DONE}};
 }

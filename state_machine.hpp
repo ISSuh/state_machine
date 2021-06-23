@@ -7,24 +7,28 @@
 #ifndef STATE_MACHINE_HPP_
 #define STATE_MACHINE_HPP_
 
-#include <iostream>
-#include <string>
-#include <vector>
-#include <map>
 #include <algorithm>
 #include <atomic>
 #include <functional>
-#include <thread>
 #include <future>
-#include <memory>
-#include <utility>
 #include <initializer_list>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 namespace sm {
 
 class ArgumentBase {
  public:
   virtual ~ArgumentBase() {}
+
+  template <typename ArgumentType>
+  void set(ArgumentType* value) {}
 
   template <typename ArgumentType>
   ArgumentType* get() const {}
@@ -36,46 +40,53 @@ class Argument : public ArgumentBase {
   explicit Argument(ArgumentType* value) : value_(value) {}
   virtual ~Argument() {}
 
+  void set(ArgumentType* value) { value_.reset(value); }
   ArgumentType* get() const { return value_.get(); }
 
  private:
   std::unique_ptr<ArgumentType> value_;
 };
 
+// TODO(issuh) : fix dangling pointer on args_
 class Arguments {
  public:
+  Arguments() = default;
+  ~Arguments() {}
+
   template <typename ArgumentType>
   void Allocate(const std::string& key, ArgumentType* value);
 
   template <typename ArgumentType>
-  ArgumentType* At(const std::string& key) const;
+  ArgumentType* At(const std::string& key);
 
-  size_t NumberOfArgs() const { return args_.size(); }
-  bool Find(const std::string& key) { return args_.find(key) != args_.end(); }
+  bool Find(const std::string& key) const {
+    return args_.find(key) != args_.end();
+  }
 
  private:
+  std::mutex mutex_;
   std::map<std::string, ArgumentBase*> args_;
 };
 
 template <typename ArgumentType>
 void Arguments::Allocate(const std::string& key, ArgumentType* value) {
-  if (args_.find(key) != args_.end()) {
-#if defined(STATE_MACHINE_DEBUG)
-    std::cout << "[" << key << "] already exist\n";
-#endif
-    return;
-  }
+  std::lock_guard<std::mutex> lock_guard(mutex_);
 
-  args_.insert(
-      {key, static_cast<ArgumentBase*>(new Argument<ArgumentType>(value))});
+  if (Find(key)) {
+    Argument<ArgumentType>* arg =
+        dynamic_cast<Argument<ArgumentType>*>(args_[key]);
+    arg->set(value);
+  } else {
+    args_.insert(
+        {key, static_cast<ArgumentBase*>(new Argument<ArgumentType>(value))});
+  }
 }
 
 template <typename ArgumentType>
-ArgumentType* Arguments::At(const std::string& key) const {
-  if (args_.find(key) == args_.end()) {
-#if defined(STATE_MACHINE_DEBUG)
-    std::cout << "[" << key << "] invalid\n";
-#endif
+ArgumentType* Arguments::At(const std::string& key) {
+  std::lock_guard<std::mutex> lock_guard(mutex_);
+
+  if (!Find(key)) {
     return nullptr;
   }
 
@@ -137,15 +148,18 @@ template <typename UserState>
 class StateMachine {
  public:
   StateMachine()
-      : states_({{UserState::START}}),
+      : args_(new Arguments()),
+        states_({{UserState::START}}),
         running_(false),
         count_concurrency_states_(0) {}
 
-  explicit StateMachine(Arguments args)
+  explicit StateMachine(Arguments* args)
       : args_(args),
         states_({{UserState::START}}),
         running_(false),
         count_concurrency_states_(0) {}
+
+  Arguments* GetArguments() const { return args_; }
 
   template <typename F>
   void On(UserState state, F&& func);
@@ -158,31 +172,26 @@ class StateMachine {
                       StateMachine<SubState>* sub_state_machine,
                       UserState output_state);
 
-  void WaitConcurrencyOn(UserState state);
-
   void Excute();
-
-  bool HasTask(UserState state) const {
-    return worker_.find(state) != worker_.end();
-  }
 
   bool IsRunning() const { return running_.load(); }
 
   const States<UserState>& NowStates() const { return states_; }
-  const State<UserState>& NowState() const { return states_[0]; }
-
-  template <typename F>
-  void RegistStateToStringFunc(F&& func);
+  State<UserState> NowState() const { return *states_.begin(); }
 
  private:
+  bool HasTask(UserState state) const {
+    return worker_.find(state) != worker_.end();
+  }
+
   void ChangeRunning(bool run) { running_.store(run); }
+  void SequenceStateRun(States<UserState>* next_state);
+  void ConcurrentStateRun(States<UserState>* next_state);
+
   bool NeedConcurreny() const { return states_.size() > 1; }
   bool NeedWaitingConcurrentState() const {
     return count_concurrency_states_.load() > 1;
   }
-
-  void SequenceStateRun(States<UserState>* next_state);
-  void ConcurrentStateRun(States<UserState>* next_state);
 
   template <typename SubState>
   class SubStateMachine {
@@ -202,42 +211,43 @@ class StateMachine {
   };
 
  private:
-  Arguments args_;
+  // TODO(issuh) : args_ will be changed unique_ptr
+  Arguments* args_;
   States<UserState> states_;
   std::map<UserState, Task<UserState>> worker_;
 
   std::atomic_bool running_ = false;
-  std::atomic_uint64_t count_concurrency_states_;
 
-  std::function<std::string(UserState)> state_to_strint_func_;
+  std::atomic_uint64_t count_concurrency_states_;
+  std::mutex mutex_;
 };
 
 template <typename UserState>
 template <typename F>
 void StateMachine<UserState>::On(UserState state, F&& func) {
+  std::lock_guard<std::mutex> lock_guard(mutex_);
+
+  auto task_func = std::bind(std::forward<F>(func), std::ref(*args_));
+
   if (HasTask(state)) {
-#if defined(STATE_MACHINE_DEBUG)
-    std::cout << "state already exist\n";
-#endif
-    return;
+    worker_.erase(state);
   }
 
-  auto task_func = std::bind(std::forward<F>(func), std::ref(args_));
   worker_.emplace(state, task_func);
 }
 
 template <typename UserState>
 template <typename F, typename T>
 void StateMachine<UserState>::On(UserState state, F&& func, T&& class_obj) {
-  if (HasTask(state)) {
-#if defined(STATE_MACHINE_DEBUG)
-    std::cout << "state already exist\n";
-#endif
-    return;
-  }
+  std::lock_guard<std::mutex> lock_guard(mutex_);
 
   auto task_func = std::bind(std::forward<F>(func), std::forward<T>(class_obj),
-                             std::ref(args_));
+                             std::ref(*args_));
+
+  if (HasTask(state)) {
+    worker_.erase(state);
+  }
+
   worker_.emplace(state, task_func);
 }
 
@@ -247,16 +257,16 @@ void StateMachine<UserState>::RegistSubState(
     UserState state,
     StateMachine<SubState>* sub_state_machine,
     UserState output_state) {
-  if (HasTask(state)) {
-#if defined(STATE_MACHINE_DEBUG)
-    std::cout << "state already exist\n";
-#endif
-    return;
-  }
+  std::lock_guard<std::mutex> lock_guard(mutex_);
 
   auto task_func = std::bind(
       &SubStateMachine<SubState>::Excute,
       std::move(SubStateMachine<SubState>(sub_state_machine, output_state)));
+
+  if (HasTask(state)) {
+    worker_.erase(state);
+  }
+
   worker_.emplace(state, task_func);
 }
 
@@ -320,12 +330,6 @@ void StateMachine<UserState>::ConcurrentStateRun(
 
     count_concurrency_states_.fetch_sub(1);
   }
-}
-
-template <typename UserState>
-template <typename F>
-void StateMachine<UserState>::RegistStateToStringFunc(F&& func) {
-  state_to_strint_func_ = std::forward<F>(func);
 }
 
 }  // namespace sm
