@@ -4,7 +4,6 @@
  *
  */
 
-#include <vector>
 #include "../state_machine.hpp"
 
 enum class Color {

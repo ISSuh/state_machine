@@ -52,7 +52,7 @@ class Arguments {
   template <typename ArgumentType>
   ArgumentType* At(const std::string& key) const;
 
-  int32_t NumberOfArgs() const { return args_.size(); }
+  size_t NumberOfArgs() const { return args_.size(); }
   bool Find(const std::string& key) { return args_.find(key) != args_.end(); }
 
  private:

@@ -30,8 +30,14 @@
 *.exe
 *.out
 *.app
-example/api_exaple
 
+# Example
+example/api_exaple
 example/asyn*
 example/api_example_2*
 example/Makefile
+
+# Window platform
+.vs/*
+out/*
+build/*

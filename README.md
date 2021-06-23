@@ -5,12 +5,13 @@
 Implement header only simple state machine using c++ 11.
 
 ## Feature
+- Support Window, Linux
 - Sequential state
 - Sub state
 - Concurrent state
 
 ## Build
-This project include *\<thread\>*.\
+This project include *\<thread\>*.
 So if you use it on POSIX platform, you must link pthraed(-lpthread).
 
 [example_make_file](./example/Makefile)
