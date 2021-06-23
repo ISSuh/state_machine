@@ -13,8 +13,8 @@ endif()
 
 set(EXAMPLE_DIR ${CMAKE_SOURCE_DIR}/example)
 
-add_executable (sequence_example ${EXAMPLE_DIR}/sequence_example.cc)
-target_link_libraries(sequence_example ${DEPENDENCY_LIB})
+add_executable (basic_example ${EXAMPLE_DIR}/basic_example.cc)
+target_link_libraries(basic_example ${DEPENDENCY_LIB})
 
 add_executable (concurreny_example ${EXAMPLE_DIR}/concurreny_example.cc)
 target_link_libraries(concurreny_example ${DEPENDENCY_LIB})

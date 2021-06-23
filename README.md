@@ -14,7 +14,6 @@ Implement header only simple state machine using c++ 11.
 This project include *\<thread\>*.
 So if you use it on POSIX platform, you must link pthraed(-lpthread).
 
-[example_make_file](./example/Makefile)
 ```Makefile
 # Makefile example
 CC = g++
@@ -164,7 +163,7 @@ int main() {
 ### Regist sub state machine on parent
 Can regist sub state machine on other state machine.
 
-[sequence_example.cc](./example/sequence_example)
+[basic_example.cc](https://github.com/ISSuh/state_machine/tree/main/example/basic_example.cc)
 ```cpp
 #include "state_machine.hpp"
 
@@ -240,7 +239,7 @@ int main() {
 ### Cuncurrency state
 When returned number of next state is more than one, the state machine create thread and run state function.
 
-[concurrent_example.cc](./example/concurrent_example)
+[concurreny_example.cc](https://github.com/ISSuh/state_machine/tree/main/example/concurreny_example.cc)
 ```cpp
 enum class MyState : uint32_t {
   START,
@@ -316,6 +315,5 @@ int main() {
 }
 ```
 ## TODO
- - Support Window
  - Visualize state machine using graphviz
  - Redesign cunrrency state

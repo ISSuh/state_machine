@@ -7,20 +7,18 @@
 #ifndef STATE_MACHINE_HPP_
 #define STATE_MACHINE_HPP_
 
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
 #include <algorithm>
 #include <atomic>
 #include <functional>
-#include <future>
-#include <initializer_list>
-#include <iostream>
-#include <map>
-#include <memory>
-#include <queue>
-#include <stack>
-#include <string>
 #include <thread>
+#include <future>
+#include <memory>
 #include <utility>
-#include <vector>
+#include <initializer_list>
 
 namespace sm {
 
