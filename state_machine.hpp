@@ -28,9 +28,6 @@ class ArgumentBase {
   virtual ~ArgumentBase() {}
 
   template <typename ArgumentType>
-  void set(ArgumentType* value) {}
-
-  template <typename ArgumentType>
   ArgumentType* get() const {}
 };
 
@@ -40,28 +37,33 @@ class Argument : public ArgumentBase {
   explicit Argument(ArgumentType* value) : value_(value) {}
   virtual ~Argument() {}
 
-  void set(ArgumentType* value) { value_.reset(value); }
-  ArgumentType* get() const { return value_.get(); }
+  ArgumentType* get() const { return value_; }
 
  private:
-  std::unique_ptr<ArgumentType> value_;
+  ArgumentType* value_;
 };
 
 // TODO(issuh) : fix dangling pointer on args_
 class Arguments {
  public:
   Arguments() = default;
-  ~Arguments() {}
+  ~Arguments() {
+    for (const auto& item : args_) {
+      delete item.second;
+    }
 
-  template <typename ArgumentType>
-  void Allocate(const std::string& key, ArgumentType* value);
-
-  template <typename ArgumentType>
-  ArgumentType* At(const std::string& key);
-
-  bool Find(const std::string& key) const {
-    return args_.find(key) != args_.end();
+    args_.clear();
   }
+
+  template <typename ArgumentType>
+  void insert(const std::string& key, ArgumentType* value);
+
+  template <typename ArgumentType>
+  ArgumentType* at(const std::string& key);
+
+  bool find(const std::string& key) const;
+  void erase(const std::string& key);
+
 
  private:
   std::mutex mutex_;
@@ -69,24 +71,18 @@ class Arguments {
 };
 
 template <typename ArgumentType>
-void Arguments::Allocate(const std::string& key, ArgumentType* value) {
+void Arguments::insert(const std::string& key, ArgumentType* value) {
   std::lock_guard<std::mutex> lock_guard(mutex_);
-
-  if (Find(key)) {
-    Argument<ArgumentType>* arg =
-        dynamic_cast<Argument<ArgumentType>*>(args_[key]);
-    arg->set(value);
-  } else {
+  if (!find(key)) {
     args_.insert(
         {key, static_cast<ArgumentBase*>(new Argument<ArgumentType>(value))});
   }
 }
 
 template <typename ArgumentType>
-ArgumentType* Arguments::At(const std::string& key) {
+ArgumentType* Arguments::at(const std::string& key) {
   std::lock_guard<std::mutex> lock_guard(mutex_);
-
-  if (!Find(key)) {
+  if (!find(key)) {
     return nullptr;
   }
 
@@ -94,33 +90,43 @@ ArgumentType* Arguments::At(const std::string& key) {
   Argument<ArgumentType>* arg = dynamic_cast<Argument<ArgumentType>*>(arg_base);
   return arg->get();
 }
+bool Arguments::find(const std::string& key) const {
+  return args_.find(key) != args_.end();
+}
+
+void Arguments::erase(const std::string& key) {
+  std::lock_guard<std::mutex> lock_guard(mutex_);
+  if (find(key)) {
+    ArgumentBase* arg = args_.at(key);
+    delete arg;
+
+    args_.erase(key);
+  }
+}
 
 template <typename UserState>
 class State {
  public:
-  State(std::initializer_list<UserState> state) : states_(*state.begin()) {}
   explicit State(UserState state) : states_(state) {}
+  State(std::initializer_list<UserState> state) : states_(*state.begin()) {}
+  State(State&& rhs) noexcept : states_(rhs.states_) {}
+  State(const State& rhs) : states_(rhs.states_) {}
 
-  State(State&& rhs) : states_(rhs.states_.load()) {}
-  State(const State& rhs) : states_(rhs.states_.load()) {}
-
-  void Change(UserState state) { states_.store(state); }
-  const UserState Now() const { return states_.load(); }
-
-  bool IsStartState() const { return states_.load() == UserState::START; }
-  bool IsDoneState() const { return states_.load() == UserState::DONE; }
+  const UserState Now() const { return states_; }
+  bool IsStartState() const { return states_ == UserState::START; }
+  bool IsDoneState() const { return states_ == UserState::DONE; }
 
   const State& operator=(const State& rhs) {
     if (this == &rhs) {
       return *this;
     }
 
-    states_.store(rhs.states_.load());
+    states_ = rhs.states_;
     return *this;
   }
 
  private:
-  std::atomic<UserState> states_;
+  UserState states_;
 };
 
 template <typename UserState>
@@ -129,15 +135,14 @@ using States = std::vector<sm::State<UserState>>;
 template <typename UserState>
 class Task {
  public:
-  using TaskFunction = std::function<States<UserState>()>;
-
   template <typename F>
   explicit Task(F&& func) : task_(func) {}
 
-  const States<UserState> call() const { return task_(); }
-  const TaskFunction& get() const { return task_; }
+  States<UserState> call() const { return task_(); }
 
  private:
+  using TaskFunction = std::function<States<UserState>()>;
+
   Task(const Task<UserState>& rhs) = delete;
   Task<UserState>& operator=(const Task<UserState>& rhs) = delete;
 
@@ -148,7 +153,7 @@ template <typename UserState>
 class StateMachine {
  public:
   StateMachine()
-      : args_(new Arguments()),
+      : args_(nullptr),
         states_({{UserState::START}}),
         running_(false),
         count_concurrency_states_(0) {}
@@ -211,7 +216,6 @@ class StateMachine {
   };
 
  private:
-  // TODO(issuh) : args_ will be changed unique_ptr
   Arguments* args_;
   States<UserState> states_;
   std::map<UserState, Task<UserState>> worker_;
@@ -318,7 +322,7 @@ void StateMachine<UserState>::ConcurrentStateRun(
     }
 
     const Task<UserState>& task = worker_.at(state.Now());
-    concurrent_tasks.emplace_back(std::async(std::launch::async, task.get()));
+    concurrent_tasks.emplace_back(std::async(std::launch::async, &Task<UserState>::call, &task));
     count_concurrency_states_.fetch_add(1);
   }
 

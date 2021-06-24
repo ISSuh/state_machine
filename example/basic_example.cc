@@ -53,7 +53,7 @@ std::string SubColorStateToString(SubColor state) {
   }
 }
 
-class MyArgyment {
+class MyArgument {
  public:
   void hello() { std::cout << "hello " << val++ << std::endl; }
 
@@ -63,8 +63,13 @@ class MyArgyment {
 
 sm::States<Color> red_color(sm::Arguments& arg) {
   std::cout << "----- Color::RED State -----\n";
-  MyArgyment* my_arg = arg.At<MyArgyment>("obj");
-  my_arg->hello();
+
+  // get varialble pointer using key string
+  int* count = arg.at<int>("count");
+  double* array = arg.at<double>("array");
+  std::vector<int>* container = arg.at<std::vector<int>>("container");
+  MyArgument* my_arg = arg.at<MyArgument>("obj");
+
   return {{Color::BLUE}};
 }
 
@@ -72,27 +77,43 @@ class MySubState {
  public:
   sm::States<SubColor> white_color(sm::Arguments& arg) {
     std::cout << "----- SubColor::WHITE State -----\n";
-    MyArgyment* my_arg = arg.At<MyArgyment>("obj");
+    MyArgument* my_arg = arg.at<MyArgument>("obj");
     my_arg->hello();
     return {{SubColor::BLACK}};
   }
 
   sm::States<SubColor> black_color(sm::Arguments& arg) {
     std::cout << "----- SubColor::BLACK State -----\n";
-    MyArgyment* my_arg = arg.At<MyArgyment>("obj");
+    MyArgument* my_arg = arg.at<MyArgument>("obj");
     my_arg->hello();
     return {{SubColor::DONE}};
   }
 };
 
 int main() {
-  std::cout << "Simple FSM Example\n\n";
-
-  // create arguments and regist
-  MyArgyment my_arg;
+  std::cout << "Simple State Machine example\n\n";
 
   sm::Arguments args;
-  args.Allocate("obj", &my_arg);
+
+  // regist varialbe though passing key string and address
+  int count = 0;
+  args.insert("count", &count);
+
+  // regist array
+  double array[5] = {0.0, };
+  args.insert("array", array);
+
+  // regist STL container
+  std::vector<int> container;
+  args.insert("container", &container);
+
+  // regist object
+  MyArgument my_arg;
+  args.insert("obj", &my_arg);
+
+  // if key is already exist, it will be ignored
+  int count_dup = 1;
+  args.insert("count", &count_dup);
 
   // create state machine and regist arguments
   sm::StateMachine<Color> machine(&args);
@@ -110,7 +131,7 @@ int main() {
 
   machine.On(Color::GREEN, [](sm::Arguments& arg) -> sm::States<Color> {
     std::cout << "----- Color::GREEN State -----\n";
-    MyArgyment* my_arg = arg.At<MyArgyment>("obj");
+    MyArgument* my_arg = arg.at<MyArgument>("obj");
     my_arg->hello();
     return {{Color::DONE}};
   });

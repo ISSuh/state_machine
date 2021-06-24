@@ -113,6 +113,8 @@ int main() {
 ### Assign arguments
 Can regist arguments on state machine using *sm::Arguments* class.
 
+sm::Arguments::Allocate() is just assign address on member variable.
+
 ```cpp
 class MyArgyment {
  public:
@@ -124,10 +126,10 @@ class MyArgyment {
 
 sm::States<MyState> Work(sm::Arguments& arg) {
   // get varialble pointer using key string
-  int* count = arg.At<int>("count");
-  double* array = arg.At<double>("array");
-  std::vector<int>* container = arg.At<std::vector<int>>("container");
-  MyArgyment* my_arg = arg.At<MyArgyment>("obj");
+  int* count = arg.at<int>("count");
+  double* array = arg.at<double>("array");
+  std::vector<int>* container = arg.at<std::vector<int>>("container");
+  MyArgyment* my_arg = arg.at<MyArgyment>("obj");
 
   my_arg->hello();
 
@@ -139,19 +141,23 @@ int main() {
   
   // regist varialbe though passing key string and address 
   int count = 0;
-  args.Allocate("obj", &count);
+  args.insert("count", &count);
 
   // regist array
   double array[5] = {0.0, };
-  args.Allocate("array", array);
+  args.insert("array", array);
 
   // regist STL container
   std::vector<int> container;
-  args.Allocate("container", &container);
+  args.insert("container", &container);
 
   // regist object
   MyArgyment my_arg;
-  args.Allocate("obj", &my_arg);
+  args.insert("obj", &my_arg);
+
+  // if key is already exist, it will be ignored
+  int count_dup = 1;
+  args.insert("count", &count_dup);
 
   // regist arguments on state machine
   sm::StateMachine<MyState> machine(&args);
@@ -209,12 +215,12 @@ sm::States<SubColor> black_color(sm::Arguments& arg) {
 int main() {
 
   sm::Arguments args;
-  sm::StateMachine<Color> machine(args); 
+  sm::StateMachine<Color> machine(&args); 
 
   machine.On(Color::RED, &red_color);
 
   // declare sub state machine
-  sm::StateMachine<SubColor> sub_machine(args);
+  sm::StateMachine<SubColor> sub_machine(&args);
   sub_machine.On(SubColor::WHITE, &white_color);
   sub_machine.On(SubColor::BLACK, &black_color);
 
